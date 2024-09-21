@@ -1,5 +1,7 @@
-﻿using Spectre.Console;
+﻿using Newtonsoft.Json;
+using Spectre.Console;
 using Spectre.Console.Cli;
+using TiGDPI.ConsoleApp.Entities;
 using TiGDPI.ConsoleApp.Helpers;
 
 // ReSharper disable PossiblyImpureMethodCallOnReadonlyVariable
@@ -9,6 +11,8 @@ namespace TiGDPI.ConsoleApp.Commands.Main;
 
 public class MainCommand : AsyncCommand<MainCommandSettings>
 {
+    private const string DataUrl = "https://raw.githubusercontent.com/thetimick/TiGDPI/refs/heads/main/public/data.json";
+    
     public override async Task<int> ExecuteAsync(CommandContext context, MainCommandSettings settings)
     {
         AnsiConsoleLib.ShowHeader();
@@ -33,6 +37,10 @@ public class MainCommand : AsyncCommand<MainCommandSettings>
                     progress.AddTask($"[#{color}]Загрузка данных...[/]")
                         .IsIndeterminate();
                     
+                    var data = new DataEntity();
+                    var str = JsonConvert.SerializeObject(data, Formatting.Indented);
+                    await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "data.json"), str);
+                    
                     await Task.Delay(2000);
                     
                     progress.AddTask($"[#{color}]Сравнение параметров...[/]")
@@ -53,4 +61,13 @@ public class MainCommand : AsyncCommand<MainCommandSettings>
         await AnsiConsole.Console.Input.ReadKeyAsync(true, CancellationToken.None);
         return 0;
     }
+
+    #region Private Methods
+    private async Task<string> ObtainData()
+    {
+        using var client = new HttpClient();
+        var response = await client.GetAsync(DataUrl);
+        return await response.Content.ReadAsStringAsync();
+    }
+    #endregion
 }
