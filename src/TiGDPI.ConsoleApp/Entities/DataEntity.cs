@@ -5,7 +5,7 @@ public record DataEntity
     public record UrlsEntity
     {
         public string BlackListUrl { get; set; } = "https://p.thenewone.lol/domains-export.txt";
-        public string YouTubeListUrl { get; set; } = "";
+        public string YouTubeListUrl { get; set; } = "https://raw.githubusercontent.com/thetimick/TiGDPI/refs/heads/main/public/russia-youtube.txt";
     }
 
     public record StartupEntity
