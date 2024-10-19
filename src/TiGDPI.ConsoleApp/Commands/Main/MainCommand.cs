@@ -1,4 +1,7 @@
-﻿using Newtonsoft.Json;
+﻿using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Net.NetworkInformation;
+using Newtonsoft.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using TiGDPI.ConsoleApp.Entities;
@@ -20,14 +23,8 @@ public class MainCommand : AsyncCommand<MainCommandSettings>
         await AnsiConsole.Progress()
             .AutoRefresh(true)
             .Columns(
-                new TaskDescriptionColumn
-                {
-                    Alignment = Justify.Right
-                },
-                new ProgressBarColumn
-                {
-                    IndeterminateStyle = new Style(Constants.Colors.SecondColor, Constants.Colors.MainColor)
-                }
+                new TaskDescriptionColumn { Alignment = Justify.Right },
+                new ProgressBarColumn { IndeterminateStyle = new Style(Constants.Colors.SecondColor, Constants.Colors.MainColor) }
             )
             .StartAsync(
                 async progress =>
@@ -36,22 +33,18 @@ public class MainCommand : AsyncCommand<MainCommandSettings>
                     
                     progress.AddTask($"[#{color}]Загрузка данных...[/]")
                         .IsIndeterminate();
+
+                    var data = await ObtainDataAsync();
                     
-                    var data = new DataEntity();
-                    var str = JsonConvert.SerializeObject(data, Formatting.Indented);
-                    await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "data.json"), str);
-                    
-                    await Task.Delay(2000);
-                    
-                    progress.AddTask($"[#{color}]Сравнение параметров...[/]")
+                    progress.AddTask($"[#{color}]Поиск лучшего обхода для YouTube...[/]")
                         .IsIndeterminate();
-                    
-                    await Task.Delay(2000);
+
+                    var urls = await File.ReadAllLinesAsync(Path.Combine(Environment.CurrentDirectory, "russia-youtube.txt"));
+                    var result = await Check(data.Startup.DefaultWithYouTubeFix[0], urls);
+                    AnsiConsole.WriteLine(result);
                     
                     progress.AddTask($"[#{color}]Запуск GoodbyeDPI...[/]")
                         .IsIndeterminate();
-                    
-                    await Task.Delay(2000);
                 }
             );
         
@@ -63,11 +56,82 @@ public class MainCommand : AsyncCommand<MainCommandSettings>
     }
 
     #region Private Methods
-    private async Task<string> ObtainData()
+    private async Task<DataEntity> ObtainDataAsync()
     {
         using var client = new HttpClient();
-        var response = await client.GetAsync(DataUrl);
+        
+        var dataString = await ObtainDataAsync(client, DataUrl);
+        await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "current-data.json"), dataString);
+        var data = JsonConvert.DeserializeObject<DataEntity>(dataString) ?? new DataEntity();
+        
+        var blackListString = await ObtainDataAsync(client, data.Urls.BlackListUrl);
+        await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "russia-blacklist.txt"), blackListString);
+
+        var youtubeListString = await ObtainDataAsync(client, data.Urls.YouTubeListUrl);
+        await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "russia-youtube.txt"), youtubeListString);
+        
+        return data;
+    }
+
+    private async Task<bool> Check(string command, IList<string> urls)
+    {
+        var process = LaunchProcess(
+            Path.Combine(Environment.CurrentDirectory, "x86_64", "goodbyedpi.exe"), 
+            $@" {command} --blacklist ..\russia-blacklist.txt --blacklist ..\russia-youtube.txt"
+        );
+
+        foreach (var url in urls)
+        {
+            var reply = await PingAsync(url);
+            if (reply?.Status != IPStatus.Success)
+            {
+                AnsiConsole.WriteLine("ERROR");
+            }
+        }
+
+        await Task.Delay(5000);
+        
+        // process.Close();
+
+        return true;
+    }
+    #endregion
+
+    #region Private Methods (static)
+    private static async Task<string> ObtainDataAsync(HttpClient client, string url)
+    {
+        var response = await client.GetAsync(url);
         return await response.Content.ReadAsStringAsync();
+    }
+ 
+    private static Process LaunchProcess(string filename, string arguments)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = filename,
+                Arguments = arguments,
+                UseShellExecute = true
+            }
+        };
+        process.Start();
+        return process;
+    }
+
+    private static async Task<PingReply?> PingAsync(string url)
+    {
+        try
+        {
+            var reply = await new Ping().SendPingAsync(url);
+            return reply;
+        }
+        catch
+        {
+            // ignored
+        }
+
+        return null;
     }
     #endregion
 }
